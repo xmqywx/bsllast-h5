@@ -16,7 +16,12 @@
   "dependencies": {
     "axios": "0.18.0",
     "element-ui": "2.4.6",
+    "fabric": "^2.7.0",
+    "fabric-customise-controls": "^2.0.1-beta",
+    "fontfaceobserver": "^2.1.0",
+    "jquery": "^3.3.1",
     "js-cookie": "2.2.0",
+    "mint-ui": "^2.2.13",
     "mockjs": "1.0.1-beta3",
     "normalize.css": "7.0.0",
     "nprogress": "0.2.0",

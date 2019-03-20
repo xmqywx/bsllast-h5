@@ -14,6 +14,9 @@ import router from './router'
 
 import '@/icons' // icon
 import '@/permission' // permission control
+import MintUI from 'mint-ui'
+import 'mint-ui/lib/style.css'
+import { Popup } from 'mint-ui'
 
 /**
  * This project originally used easy-mock to simulate data,
@@ -28,6 +31,8 @@ import '../mock' // simulation data
 Vue.use(ElementUI, { locale })
 
 Vue.config.productionTip = false
+Vue.use(MintUI)
+Vue.component(Popup.name, Popup)
 
 new Vue({
   el: '#app',
