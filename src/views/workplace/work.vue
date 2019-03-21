@@ -16,7 +16,7 @@
         <img src="https://img.bslong.cn/wxcanvas/copy.png">
         <span>复制</span>
       </div>
-      <div class="save">保存</div>
+      <div class="save" @click="save()">保存</div>
     </div>
     <div
       :style="`width: ${currentWidth}px; height: ${currentHeight}px;`"
@@ -41,6 +41,7 @@
           <img src="https://img.bslong.cn/wxcanvas/add_image.png">
           添加图片
           <i class="el-icon-arrow-down"/>
+          <input type="file" placeholder="" accept="image/*" @change="readURL($event)">
         </div>
       </div>
       <div v-if="textTool">
@@ -214,7 +215,7 @@
               >
                 <div class="icon alignRight"/>
                 <div class="label">
-                  佑对齐
+                  右对齐
                 </div>
               </div>
             </div>
@@ -231,6 +232,8 @@ const jsonTest = require('./test.json')
 import { SelectFontLists } from '@/fonts/mobileFont.js'
 import FontFaceObserver from 'fontfaceobserver'
 import mixin from './mixin.js'
+import EXIF from 'exif-js'
+const wx = window.wx
 const FONT_FORMAT = {
   eot: '',
   otf: 'opentype',
@@ -290,16 +293,7 @@ export default {
   },
   mounted: function() {
     const that = this
-    this.$store.commit('createCanvas', {
-      type: this.$route.name
-    })
-    this.$store.commit('refreshCanvas')
-    const json = JSON.stringify(jsonTest)
-
-    this.$store.commit('loadJson', {
-      json: json,
-      type: 'firstLoad'
-    })
+    this.loadJson()
     const allfont = SelectFontLists[0].list
     let count = 0
     function pushArr() {
@@ -316,8 +310,33 @@ export default {
       }
     }
     pushArr()
-    // this.$store.commit('refreshCanvas')
-    // this.$store.commit('createCanvas')
+
+    fetch('https://svg2png.bslong.cn/rsx/1', {
+      // fetch('http://localhost:3009/rsx/1', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;charset=utf-8',
+        'Content-Type': 'application/json;charset=utf-8'
+      },
+      body: JSON.stringify({ url: window.location.href })
+    })
+      .then(response => {
+        // console.log(response.json())
+        return response.json()
+      })
+      .then(data => {
+        // console.log(data);
+        wx.config({
+          debug: false,
+          appId: data.appid,
+          timestamp: data.timestamp,
+          nonceStr: data.nonceStr,
+          signature: data.signature,
+          jsApiList: [
+            'chooseImage'
+          ]
+        })
+      })
   },
   methods: {
     init(activeObject) {
@@ -325,6 +344,36 @@ export default {
       this.lineSpace = activeObject.lineHeight * 10
       this.currentFontFamilySvg = activeObject.fontFamily
       this.opacity = (activeObject.opacity || 1) * 100
+    },
+    async loadJson() {
+      const jsonUrl = this.$route.query.jsonUrl
+      const uri = `https://svgfiles.bslong.cn/${jsonUrl}.json`
+      this.$store.commit('createCanvas', {
+        type: this.$route.name
+      })
+      this.$store.commit('refreshCanvas')
+
+      // const json1 = JSON.stringify(jsonTest)
+      const json = await fetch(uri, { cors: 'no-cors' })
+      let content = await json.text() || JSON.stringify(jsonTest)
+
+      const contendData = JSON.parse(content)
+      const contentObjects = contendData.objects || []
+
+      if (contentObjects.length > 0) {
+        const visibleObjects = contentObjects.filter((item) => {
+          return item.visible !== false
+        })
+
+        if (visibleObjects.length < contentObjects.length) {
+          contendData.objects = visibleObjects
+          content = JSON.stringify(contendData)
+        }
+      }
+      this.$store.commit('loadJson', {
+        json: content,
+        type: 'firstLoad'
+      })
     },
     addText({ size = 20, text = '双击编辑文字' }) {
       this.$store.commit('addText', {
@@ -344,6 +393,156 @@ export default {
     filterNode(value, data) {
       if (!value) return true
       return data.label.indexOf(value) !== -1
+    },
+    readURL(e) {
+      const input = e.target
+      const that = this
+      let Orientation = null
+      if (input.files && input.files[0]) {
+        EXIF.getData(input.files[0], function() {
+          // alert(EXIF.pretty(this));
+          EXIF.getAllTags(this)
+          Orientation = EXIF.getTag(input.files[0], 'Orientation')
+        })
+
+        const reader = new FileReader()
+        reader.onload = function(e) {
+          const url = e.target.result
+          const img = new Image()
+          console.log(url)
+          img.src = url
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          img.onload = function() {
+            const imgInfo = {
+              w: img.width / that.svgSc,
+              h: img.height / that.svgSc
+            }
+            canvas.width = img.width
+            canvas.height = img.height
+            if (img.width < img.height && img.width > 800) {
+              canvas.width = 800
+              canvas.height = (800 * img.height) / img.width
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+            let base64 = null
+            if (navigator.userAgent.match(/iphone/i)) {
+              if (Orientation !== '' && Orientation !== 1) {
+                switch (Orientation) {
+                  case 6:
+                    that.rotateImg(img, 'left', canvas, imgInfo)
+                    break
+                  case 8:
+                    that.rotateImg(img, 'right', canvas, imgInfo)
+                    break
+                  case 3:
+                    that.rotateImg(img, 'right', canvas, imgInfo)
+                    that.rotateImg(img, 'right', canvas, imgInfo)
+                    break
+                }
+              }
+
+              base64 = canvas.toDataURL('image/png', 0.5)
+            } else {
+              if (Orientation !== '' && Orientation !== 1) {
+                switch (Orientation) {
+                  case 6:
+                    that.rotateImg(img, 'left', canvas, imgInfo)
+                    break
+                  case 8:
+                    that.rotateImg(img, 'right', canvas, imgInfo)
+                    break
+                  case 3:
+                    that.rotateImg(img, 'right', canvas, imgInfo)
+                    that.rotateImg(img, 'right', canvas, imgInfo)
+                    break
+                }
+              }
+
+              base64 = canvas.toDataURL('image/png', 0.8)
+            }
+            that.$store.commit('addImage', {
+              url: base64
+            })
+          }
+        }
+        reader.readAsDataURL(input.files[0])
+      }
+    },
+    rotateImg(img, direction, canvas, imgInfo) {
+      var min_step = 0
+      var max_step = 3
+      if (img == null) return
+      var width = img.width
+      var height = img.height
+      //
+      if (img.width < img.height && img.width > 800) {
+        width = 800
+        height = (800 * img.height) / img.width
+      } else if (img.height > 800) {
+        height = 800
+        width = (800 * img.width) / img.height
+      }
+
+      var step = 2
+      if (step == null) {
+        step = min_step
+      }
+      if (direction === 'right') {
+        step++
+        step > max_step && (step = min_step)
+      } else {
+        step--
+        step < min_step && (step = max_step)
+      }
+
+      var degree = (step * 90 * Math.PI) / 180
+      var ctx = canvas.getContext('2d')
+      switch (step) {
+        case 0:
+          canvas.width = width
+          canvas.height = height
+          ctx.drawImage(img, 0, 0)
+          break
+        case 1:
+        {
+          ctx.drawImage(img, 0, 0, width, height)
+          canvas.width = height
+          canvas.height = width
+          const _w = imgInfo.w
+          imgInfo.w = imgInfo.h
+          imgInfo.h = _w
+
+          ctx.rotate(degree)
+          ctx.drawImage(img, 0, -height, width, height)
+          break
+        }
+        case 2:
+          canvas.width = width
+          canvas.height = height
+          ctx.rotate(degree)
+          ctx.drawImage(img, -width, -height, width, height)
+          break
+        case 3:
+        {
+          canvas.width = height
+          canvas.height = width
+          const _w1 = imgInfo.w
+          imgInfo.w = imgInfo.h
+          imgInfo.h = _w1
+          ctx.rotate(degree)
+          ctx.drawImage(img, -width, 0, width, height)
+          break
+        }
+      }
+    },
+    save() {
+      this.$store.dispatch('uploadOSS').then((key) => {
+        wx.miniProgram.navigateTo({
+          url: `./savePage?img=https://svgfiles.bslong.cn/${key}.png`
+        });
+      })
     },
     showColorPop() {
       this.popupVisible = true
@@ -429,6 +628,7 @@ export default {
       display: inline-block;
       line-height: 40px;
       margin-right: 27px;
+      position: relative;
       img{
         width:15px;
         margin-right: 5px;
@@ -474,9 +674,17 @@ export default {
       width:50%;
       float:left;
       text-align: center;
+      position: relative;
       img{
         vertical-align: middle;
         height: 16px;
+      }
+      input{
+        position: absolute;
+        opacity: 0;
+        width: 100%;
+        left: 0px;
+        height: 100%;
       }
     }
   }
@@ -675,6 +883,11 @@ export default {
         background-image: url("https://img.bslong.cn/wxcanvas/right_on.png");
       }
     }
+  }
+  textarea{
+    background: #DEE2E6;
+    border: 0;
+    padding: 8px;
   }
 
 </style>

@@ -4,6 +4,7 @@ import $ from 'jquery'
 import { SupportFontLists } from '@/fonts/supportFontList.js'
 const mutations = {
   add,
+  addImage,
   addText,
   copy,
   createCanvas,
@@ -17,6 +18,44 @@ const mutations = {
   setDocumentFontFamily,
   zoomCanvas
 }
+fabric.util.object.extend(fabric.Textbox.prototype, /** @lends fabric.IText.prototype */ {
+  initHiddenTextarea: function() {
+    this.hiddenTextarea = fabric.document.createElement('textarea')
+    this.hiddenTextarea.setAttribute('autocapitalize', 'off')
+    this.hiddenTextarea.setAttribute('autocorrect', 'off')
+    this.hiddenTextarea.setAttribute('autocomplete', 'off')
+    this.hiddenTextarea.setAttribute('spellcheck', 'false')
+    this.hiddenTextarea.setAttribute('data-fabric-hiddentextarea', '')
+    this.hiddenTextarea.setAttribute('wrap', 'off')
+    var style = this._calcTextareaPosition()
+    // line-height: 1px; was removed from the style to fix this:
+    // https://bugs.chromium.org/p/chromium/issues/detail?id=870966
+    this.hiddenTextarea.style.cssText = 'position: absolute; bottom: ' + 0 +
+      'px; left: ' + 0 + '; width: 100%; height: 50px; font-size: 18px;' +
+      ' paddingｰtop: ' + style.fontSize + ';'
+
+    fabric.document.body.appendChild(this.hiddenTextarea)
+
+    // this.hiddenTextarea.scrollIntoViewIfNeeded(true)
+    fabric.util.addListener(this.hiddenTextarea, 'keydown', this.onKeyDown.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'keyup', this.onKeyUp.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'input', this.onInput.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'copy', this.copy.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'cut', this.copy.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'paste', this.paste.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'compositionstart', this.onCompositionStart.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'compositionupdate', this.onCompositionUpdate.bind(this))
+    fabric.util.addListener(this.hiddenTextarea, 'compositionend', this.onCompositionEnd.bind(this))
+    if (!this._clickHandlerInitialized && this.canvas) {
+      fabric.util.addListener(this.canvas.upperCanvasEl, 'click', this.onClick.bind(this))
+      this._clickHandlerInitialized = true
+    }
+  },
+  updateTextareaPosition: function() {
+    return
+  }
+})
+
 const FONT_FORMAT = {
   eot: '',
   otf: 'opentype',
@@ -25,7 +64,7 @@ const FONT_FORMAT = {
   woff: 'woff',
   woff2: 'woff2'
 }
-function add(state, { object, scaleW = state.pannelW / 4, tier }) {
+function add(state, { object, scaleW = state.pannelW / 2, tier }) {
   object.scaleToWidth(scaleW)
   object.initialScale = object.scaleX
   state.canvas.add(object)
@@ -38,6 +77,25 @@ function add(state, { object, scaleW = state.pannelW / 4, tier }) {
   this.commit('createMask')
   state.canvas.trigger('object:modified')
   state.canvas.renderAll()
+}
+function addImage(state, { url, pointer, offSet, scaleW, tier }) {
+  let left = setAddObjectPoint(state).left
+  let top = setAddObjectPoint(state).top
+  if (pointer) {
+    left = pointer.x - offSet.x
+    top = pointer.y - offSet.y
+  }
+  console.log(url)
+  fabric.Image.fromURL(
+    url,
+    (image) => {
+      image.set({ left, top })
+      this.commit('add', { object: image, scaleW, tier })
+    },
+    {
+      crossOrigin: 'anonymous'
+    }
+  )
 }
 function addText(state, obj) {
   const textSample = new fabric.Textbox(obj.text, {
@@ -58,7 +116,7 @@ function addText(state, obj) {
   this.commit('add', { object: textSample })
 }
 function setAddObjectPoint(state, { activeObject } = {}) {
-  const left = (state.arrX[0] + state.arrX[1]) / 2 - state.pannelW / 4 / 2
+  const left = (state.arrX[0] + state.arrX[1]) / 2 - state.pannelW / 4
   const top = (state.arrY[0] + state.arrY[1]) / 2
   activeObject = activeObject || {}
   activeObject.left = left
@@ -175,6 +233,13 @@ function createCanvas(state, { type }) {
     objectCaching: false
   })
 
+  fabric.Object.prototype.setControlVisible('mb', false)
+  fabric.Object.prototype.setControlVisible('ml', false)
+  fabric.Object.prototype.setControlVisible('mr', false)
+  fabric.Object.prototype.setControlVisible('mb', false)
+  fabric.Object.prototype.setControlVisible('mt', false)
+  fabric.Object.prototype.setControlVisible('bl', false)
+  fabric.Object.prototype.setControlVisible('tr', false)
   // initAligningGuidelines(state.canvas)
   // this.commit('rotateCorner')
   fabric.Canvas.prototype.customiseControls({
@@ -185,7 +250,7 @@ function createCanvas(state, { type }) {
   })
   fabric.Object.prototype.customiseCornerIcons({
     settings: {
-      cornerSize: 10,
+      cornerSize: 40,
       cornerShape: 'circle',
       cornerStrokeColor: 'rgb(255, 255, 255)',
       cornerColor: '#766ef3',
@@ -196,7 +261,7 @@ function createCanvas(state, { type }) {
       settings: {
         cornerShape: 'circle',
         cornerBackgroundColor: 'rgba(0, 0, 0, 0)',
-        cornerSize: 20
+        cornerSize: 30
       }
     },
     tl: {
@@ -204,7 +269,7 @@ function createCanvas(state, { type }) {
       settings: {
         cornerShape: 'circle',
         cornerBackgroundColor: 'rgba(0, 0, 0, 0)',
-        cornerSize: 20
+        cornerSize: 30
       }
     },
     mtr: {
@@ -212,7 +277,7 @@ function createCanvas(state, { type }) {
       settings: {
         cornerShape: 'circle',
         cornerBackgroundColor: '#ffffff',
-        cornerSize: 20
+        cornerSize: 25
       }
     }
   }, function() {
@@ -225,7 +290,16 @@ function createCanvas(state, { type }) {
         state.mainTool = true
         return
       }
-      console.log(activeObject)
+      $(window).scrollTop(0, 0)
+      // if (activeObject.isEditing) {
+      //   console.log(e.target.hiddenTextarea)
+      //   e.target.hiddenTextarea.scrollIntoView(false)
+      //   setTimeout(function() {
+      //     e.target.hiddenTextarea.scrollIntoView(false)
+      //     $(e.target.hiddenTextarea).css('top', 0)
+      //     $(e.target.hiddenTextarea).css('left', 0)
+      //   }, 300)
+      // }
       this.commit('initialMouseDownEvent', { activeObject: activeObject })
     },
 
